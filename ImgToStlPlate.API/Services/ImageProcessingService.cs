@@ -12,12 +12,26 @@ public class ImageProcessingService : IImageProcessingService
         CropSelection selection,
         string orientation,
         bool fillSpace,
-        bool invert)
+        bool invert,
+        double rotationDegrees)
     {
         using var stream = image.OpenReadStream();
         var img = await Image.LoadAsync<Rgba32>(stream);
 
-        img.Mutate(ctx => ctx.Crop(new Rectangle(selection.X, selection.Y, selection.Width, selection.Height)));
+        if (Math.Abs(rotationDegrees) > 0.01)
+        {
+            img.Mutate(ctx => ctx.Rotate((float)rotationDegrees));
+        }
+
+        int cropX = Math.Max(0, selection.X);
+        int cropY = Math.Max(0, selection.Y);
+        int cropW = Math.Min(selection.Width, img.Width - cropX);
+        int cropH = Math.Min(selection.Height, img.Height - cropY);
+
+        if (cropW > 0 && cropH > 0)
+        {
+            img.Mutate(ctx => ctx.Crop(new Rectangle(cropX, cropY, cropW, cropH)));
+        }
 
         // Convert to grayscale then threshold
         img.Mutate(ctx =>

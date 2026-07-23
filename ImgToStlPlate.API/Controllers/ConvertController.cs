@@ -34,7 +34,8 @@ public class ConvertController : ControllerBase
         [FromForm] string selection,
         [FromForm] string orientation,
         [FromForm] bool fillSpace,
-        [FromForm] bool invert)
+        [FromForm] bool invert,
+        [FromForm] double rotationDegrees)
     {
         try
         {
@@ -49,12 +50,12 @@ public class ConvertController : ControllerBase
             if (cropSelection == null)
                 return BadRequest(new ProblemDetails { Detail = "Invalid selection data." });
 
-            _logger.LogInformation("Converting image to B&W: orientation={O}, fill={F}, invert={I}",
-                orientation, fillSpace, invert);
+            _logger.LogInformation("Converting image to B&W: orientation={O}, fill={F}, invert={I}, rotation={R}",
+                orientation, fillSpace, invert, rotationDegrees);
 
             var result = await _imageService.CropAndConvertToBw(
                 image, cropSelection,
-                orientation, fillSpace, invert);
+                orientation, fillSpace, invert, rotationDegrees);
 
             var ms = new MemoryStream();
             await result.SaveAsync(ms, new PngEncoder());
