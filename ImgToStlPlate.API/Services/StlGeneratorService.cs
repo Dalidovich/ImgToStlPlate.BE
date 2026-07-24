@@ -40,6 +40,8 @@ public class StlGeneratorService : IStlGeneratorService
         int countOffset = (int)ms.Position;
         ms.Write(new byte[4], 0, 4);
 
+        var heightGrid = BuildHeightGrid(rectangles, rows, cols, thickness, zeroToHalfRatio);
+
         int triangleCount = 0;
 
         foreach (var r in rectangles)
@@ -50,7 +52,8 @@ public class StlGeneratorService : IStlGeneratorService
             double y1 = (r.Row + r.Height) * mmPerPixel - centerY;
             double h = r.Value == 1 ? thickness : thickness * zeroToHalfRatio;
 
-            triangleCount += WriteCuboidTriangles(ms, x0, y0, x1, y1, h);
+            triangleCount += WriteCuboidTriangles(ms, x0, y0, x1, y1, h,
+                heightGrid, r.Row, r.Col, r.Width, r.Height);
         }
 
         ms.Position = countOffset;
@@ -108,34 +111,98 @@ public class StlGeneratorService : IStlGeneratorService
         return result;
     }
 
-    private static int WriteCuboidTriangles(MemoryStream ms,
-        double x0, double y0, double x1, double y1, double h)
+    private static double?[,] BuildHeightGrid(
+        List<(int Row, int Col, int Width, int Height, int Value)> rectangles,
+        int rows, int cols, double thickness, double zeroToHalfRatio)
     {
-        // Top face (z = h)
+        var grid = new double?[rows, cols];
+        foreach (var r in rectangles)
+        {
+            double h = r.Value == 1 ? thickness : thickness * zeroToHalfRatio;
+            for (int i = r.Row; i < r.Row + r.Height; i++)
+                for (int j = r.Col; j < r.Col + r.Width; j++)
+                    grid[i, j] = h;
+        }
+        return grid;
+    }
+
+    private static int WriteCuboidTriangles(MemoryStream ms,
+        double x0, double y0, double x1, double y1, double h,
+        double?[,] heightGrid, int row, int col, int width, int height)
+    {
+        // Top face (z = h) — always external
         WriteTriangle(ms, x0, y0, h, x1, y0, h, x1, y1, h);
         WriteTriangle(ms, x0, y0, h, x1, y1, h, x0, y1, h);
 
-        // Bottom face (z = 0)
+        // Bottom face (z = 0) — always external
         WriteTriangle(ms, x0, y0, 0, x1, y1, 0, x1, y0, 0);
         WriteTriangle(ms, x0, y0, 0, x0, y1, 0, x1, y1, 0);
 
-        // Front face (y = y0)
-        WriteTriangle(ms, x0, y0, 0, x1, y0, 0, x1, y0, h);
-        WriteTriangle(ms, x0, y0, 0, x1, y0, h, x0, y0, h);
+        int count = 4;
 
-        // Back face (y = y1)
-        WriteTriangle(ms, x0, y1, 0, x1, y1, h, x1, y1, 0);
-        WriteTriangle(ms, x0, y1, 0, x0, y1, h, x1, y1, h);
+        // Front face (y = y0) — skip if neighbor below has same height
+        if (!IsInternalHorizontal(heightGrid, row - 1, col, width, h))
+        {
+            WriteTriangle(ms, x0, y0, 0, x1, y0, 0, x1, y0, h);
+            WriteTriangle(ms, x0, y0, 0, x1, y0, h, x0, y0, h);
+            count += 2;
+        }
 
-        // Left face (x = x0)
-        WriteTriangle(ms, x0, y0, 0, x0, y1, h, x0, y1, 0);
-        WriteTriangle(ms, x0, y0, 0, x0, y0, h, x0, y1, h);
+        // Back face (y = y1) — skip if neighbor above has same height
+        if (!IsInternalHorizontal(heightGrid, row + height, col, width, h))
+        {
+            WriteTriangle(ms, x0, y1, 0, x1, y1, h, x1, y1, 0);
+            WriteTriangle(ms, x0, y1, 0, x0, y1, h, x1, y1, h);
+            count += 2;
+        }
 
-        // Right face (x = x1)
-        WriteTriangle(ms, x1, y0, 0, x1, y1, 0, x1, y1, h);
-        WriteTriangle(ms, x1, y0, 0, x1, y1, h, x1, y0, h);
+        // Left face (x = x0) — skip if neighbor left has same height
+        if (!IsInternalVertical(heightGrid, row, col - 1, height, h))
+        {
+            WriteTriangle(ms, x0, y0, 0, x0, y1, h, x0, y1, 0);
+            WriteTriangle(ms, x0, y0, 0, x0, y0, h, x0, y1, h);
+            count += 2;
+        }
 
-        return 12;
+        // Right face (x = x1) — skip if neighbor right has same height
+        if (!IsInternalVertical(heightGrid, row, col + width, height, h))
+        {
+            WriteTriangle(ms, x1, y0, 0, x1, y1, 0, x1, y1, h);
+            WriteTriangle(ms, x1, y0, 0, x1, y1, h, x1, y0, h);
+            count += 2;
+        }
+
+        return count;
+    }
+
+    private static bool IsInternalHorizontal(double?[,] grid, int checkRow, int startCol, int spanWidth, double h)
+    {
+        int rows = grid.GetLength(0);
+        int cols = grid.GetLength(1);
+        if (checkRow < 0 || checkRow >= rows) return false;
+
+        for (int c = startCol; c < startCol + spanWidth; c++)
+        {
+            if (c < 0 || c >= cols) return false;
+            var neighbor = grid[checkRow, c];
+            if (!neighbor.HasValue || Math.Abs(neighbor.Value - h) > 1e-9) return false;
+        }
+        return true;
+    }
+
+    private static bool IsInternalVertical(double?[,] grid, int startRow, int checkCol, int spanHeight, double h)
+    {
+        int rows = grid.GetLength(0);
+        int cols = grid.GetLength(1);
+        if (checkCol < 0 || checkCol >= cols) return false;
+
+        for (int r = startRow; r < startRow + spanHeight; r++)
+        {
+            if (r < 0 || r >= rows) return false;
+            var neighbor = grid[r, checkCol];
+            if (!neighbor.HasValue || Math.Abs(neighbor.Value - h) > 1e-9) return false;
+        }
+        return true;
     }
 
     private static void WriteTriangle(MemoryStream ms,
