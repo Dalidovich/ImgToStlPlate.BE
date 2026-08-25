@@ -8,6 +8,8 @@ namespace ImgToStlPlate.API.Services;
 
 public class ImageProcessingService : IImageProcessingService
 {
+    private static readonly Rgba32 Hole = new(255, 255, 255, 0);
+
     public async Task<Image<Rgba32>> CropAndConvertToBw(
         IFormFile image,
         CropSelection selection,
@@ -33,58 +35,54 @@ public class ImageProcessingService : IImageProcessingService
             img.Mutate(ctx => ctx.Crop(new Rectangle(cropX, cropY, cropW, cropH)));
         }
 
-        // Convert to grayscale then threshold
-        img.Mutate(ctx =>
-        {
-            ctx.Grayscale();
-            ctx.BinaryThreshold(0.5f);
-        });
+        ApplyBinaryPass(img, invert, fillSpace);
 
-        // Invert if requested (swap black/white for non-transparent pixels)
-        if (invert)
-        {
-            var pixels = img.Frames.RootFrame;
-            for (int y = 0; y < img.Height; y++)
-            {
-                for (int x = 0; x < img.Width; x++)
-                {
-                    var px = pixels[x, y];
-                    if (px.A > 0)
-                    {
-                        // Binary threshold means pixels are either 0 or 255
-                        byte val = (byte)(px.R < 128 ? 255 : 0);
-                        pixels[x, y] = new Rgba32(val, val, val, 255);
-                    }
-                }
-            }
-        }
-
-        // Handle orientation: vertical means bottom of model = left side of image
         if (ModelOrientation.IsVertical(orientation))
         {
             img.Mutate(ctx => ctx.Rotate(RotateMode.Rotate90));
         }
-        // horizontal: bottom = bottom of image, no rotation needed
-
-        // Fill space: replace white with transparency
-        if (fillSpace)
-        {
-            var pixels = img.Frames.RootFrame;
-            for (int y = 0; y < img.Height; y++)
-            {
-                for (int x = 0; x < img.Width; x++)
-                {
-                    var px = pixels[x, y];
-                    if (px.A > 0 && px.R >= 128)
-                    {
-                        pixels[x, y] = new Rgba32(255, 255, 255, 0);
-                    }
-                }
-            }
-        }
 
         return img;
     }
+
+    private static void ApplyBinaryPass(Image<Rgba32> img, bool invert, bool fillSpace)
+    {
+        img.ProcessPixelRows(accessor =>
+        {
+            for (int y = 0; y < accessor.Height; y++)
+            {
+                var row = accessor.GetRowSpan(y);
+                for (int x = 0; x < row.Length; x++)
+                {
+                    ref Rgba32 px = ref row[x];
+
+                    if (px.A == 0)
+                    {
+                        px = Hole;
+                        continue;
+                    }
+
+                    bool isBlack = Luminance(px) < 128;
+                    if (invert)
+                    {
+                        isBlack = !isBlack;
+                    }
+
+                    if (!isBlack && fillSpace)
+                    {
+                        px = Hole;
+                        continue;
+                    }
+
+                    byte value = isBlack ? (byte)0 : (byte)255;
+                    px = new Rgba32(value, value, value, px.A);
+                }
+            }
+        });
+    }
+
+    private static int Luminance(Rgba32 px) =>
+        (px.R * 2126 + px.G * 7152 + px.B * 722) / 10000;
 
     public Task Denoise(Image<Rgba32> bwImage, int intensity)
     {

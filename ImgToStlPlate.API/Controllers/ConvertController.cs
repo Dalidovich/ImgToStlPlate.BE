@@ -186,12 +186,9 @@ public class ConvertController : ControllerBase
 
             using var img = await SafeImageLoader.LoadAsync(bwImage);
 
-            img.Mutate(ctx => ctx.Resize(targetWidth, targetHeight, KnownResamplers.Bicubic));
-
-            if (ModelOrientation.IsHorizontal(orientation))
-            {
-                img.Mutate(ctx => ctx.Flip(FlipMode.Vertical));
-            }
+            img.Mutate(ctx => ctx
+                .Resize(targetWidth, targetHeight, KnownResamplers.Bicubic)
+                .Flip(FlipMode.Vertical));
 
             var pixels = img.Frames.RootFrame;
 
@@ -204,7 +201,7 @@ public class ConvertController : ControllerBase
                 for (int x = 0; x < w; x++)
                 {
                     var px = pixels[x, y];
-                    if (px.A == 0)
+                    if (px.A < 128)
                         matrix[y, x] = -1;
                     else if (px.R < 128)
                         matrix[y, x] = 1;
