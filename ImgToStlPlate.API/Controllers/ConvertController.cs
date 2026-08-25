@@ -115,12 +115,16 @@ public class ConvertController : ControllerBase
 
             using var img = await SafeImageLoader.LoadAsync(bwImage);
 
-            await _imageService.Denoise(img, intensity);
+            await _imageService.Denoise(img, intensity, HttpContext.RequestAborted);
 
             using var ms = new MemoryStream();
             await img.SaveAsync(ms, new PngEncoder());
 
             return File(ms.ToArray(), "image/png");
+        }
+        catch (OperationCanceledException) when (HttpContext.RequestAborted.IsCancellationRequested)
+        {
+            return new StatusCodeResult(StatusCodes.Status499ClientClosedRequest);
         }
         catch (ImageValidationException ex)
         {

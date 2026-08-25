@@ -8,6 +8,13 @@ namespace ImgToStlPlate.API.Services;
 
 public class ImageProcessingService : IImageProcessingService
 {
+    private const byte Transparent = 0;
+    private const byte Light = 1;
+    private const byte Dark = 2;
+    private const int DenoiseRadius = 3;
+    private const int MaxFlipThreshold = 970;
+    private const int MinFlipThreshold = 500;
+
     private static readonly Rgba32 Hole = new(255, 255, 255, 0);
 
     public async Task<Image<Rgba32>> CropAndConvertToBw(
@@ -84,65 +91,137 @@ public class ImageProcessingService : IImageProcessingService
     private static int Luminance(Rgba32 px) =>
         (px.R * 2126 + px.G * 7152 + px.B * 722) / 10000;
 
-    public Task Denoise(Image<Rgba32> bwImage, int intensity)
+    public Task Denoise(Image<Rgba32> bwImage, int intensity, CancellationToken cancellationToken)
     {
-        int radius = (int)Math.Round(intensity / 100.0 * 3.0);
-        if (radius == 0)
+        if (intensity <= 0)
         {
             return Task.CompletedTask;
         }
 
+        const int radius = DenoiseRadius;
+        int flipThresholdPerMille = MaxFlipThreshold
+            - (intensity - 1) * (MaxFlipThreshold - MinFlipThreshold) / 99;
+
         int w = bwImage.Width;
         int h = bwImage.Height;
+        var kinds = ClassifyPixels(bwImage);
 
-        // Clone the entire image so we can read from original while writing to clone
-        using var clone = bwImage.Clone();
-        var srcPixels = bwImage.Frames.RootFrame;
-        var dstPixels = clone.Frames.RootFrame;
+        var columnOpaque = new int[w];
+        var columnDark = new int[w];
 
-        for (int y = 0; y < h; y++)
+        for (int y = 0; y <= Math.Min(radius, h - 1); y++)
         {
-            for (int x = 0; x < w; x++)
+            AccumulateRow(kinds, columnOpaque, columnDark, w, y, 1);
+        }
+
+        bwImage.ProcessPixelRows(accessor =>
+        {
+            for (int y = 0; y < h; y++)
             {
-                var center = srcPixels[x, y];
-                if (center.A == 0) continue;
+                cancellationToken.ThrowIfCancellationRequested();
 
-                var neighbors = new List<byte>();
-
-                for (int dy = -radius; dy <= radius; dy++)
+                int windowOpaque = 0;
+                int windowDark = 0;
+                for (int x = 0; x <= Math.Min(radius, w - 1); x++)
                 {
-                    for (int dx = -radius; dx <= radius; dx++)
-                    {
-                        int nx = x + dx;
-                        int ny = y + dy;
-                        if (nx < 0 || nx >= w || ny < 0 || ny >= h) continue;
+                    windowOpaque += columnOpaque[x];
+                    windowDark += columnDark[x];
+                }
 
-                        var nb = srcPixels[nx, ny];
-                        if (nb.A > 0)
+                var row = accessor.GetRowSpan(y);
+                int rowOffset = y * w;
+
+                for (int x = 0; x < w; x++)
+                {
+                    byte kind = kinds[rowOffset + x];
+                    if (kind != Transparent && windowOpaque > 0)
+                    {
+                        bool isDark = kind == Dark;
+                        int opposite = isDark ? windowOpaque - windowDark : windowDark;
+                        bool flip = isDark
+                            ? opposite * 1000 >= flipThresholdPerMille * windowOpaque
+                            : opposite * 1000 > flipThresholdPerMille * windowOpaque;
+
+                        if (flip)
                         {
-                            neighbors.Add(nb.R);
+                            byte value = isDark ? (byte)255 : (byte)0;
+                            ref Rgba32 px = ref row[x];
+                            px = new Rgba32(value, value, value, px.A);
                         }
+                    }
+
+                    int leaving = x - radius;
+                    if (leaving >= 0)
+                    {
+                        windowOpaque -= columnOpaque[leaving];
+                        windowDark -= columnDark[leaving];
+                    }
+
+                    int entering = x + radius + 1;
+                    if (entering < w)
+                    {
+                        windowOpaque += columnOpaque[entering];
+                        windowDark += columnDark[entering];
                     }
                 }
 
-                if (neighbors.Count > 0)
+                int leavingRow = y - radius;
+                if (leavingRow >= 0)
                 {
-                    neighbors.Sort();
-                    byte median = neighbors[neighbors.Count / 2];
-                    dstPixels[x, y] = new Rgba32(median, median, median, center.A);
+                    AccumulateRow(kinds, columnOpaque, columnDark, w, leavingRow, -1);
+                }
+
+                int enteringRow = y + radius + 1;
+                if (enteringRow < h)
+                {
+                    AccumulateRow(kinds, columnOpaque, columnDark, w, enteringRow, 1);
                 }
             }
-        }
-
-        // Copy result back into the original image frame
-        for (int y = 0; y < h; y++)
-        {
-            for (int x = 0; x < w; x++)
-            {
-                srcPixels[x, y] = dstPixels[x, y];
-            }
-        }
+        });
 
         return Task.CompletedTask;
+    }
+
+    private static byte[] ClassifyPixels(Image<Rgba32> image)
+    {
+        int w = image.Width;
+        var kinds = new byte[w * image.Height];
+
+        image.ProcessPixelRows(accessor =>
+        {
+            for (int y = 0; y < accessor.Height; y++)
+            {
+                var row = accessor.GetRowSpan(y);
+                int rowOffset = y * w;
+                for (int x = 0; x < row.Length; x++)
+                {
+                    ref Rgba32 px = ref row[x];
+                    kinds[rowOffset + x] = px.A == 0
+                        ? Transparent
+                        : px.R < 128 ? Dark : Light;
+                }
+            }
+        });
+
+        return kinds;
+    }
+
+    private static void AccumulateRow(byte[] kinds, int[] columnOpaque, int[] columnDark, int width, int y, int sign)
+    {
+        int rowOffset = y * width;
+        for (int x = 0; x < width; x++)
+        {
+            byte kind = kinds[rowOffset + x];
+            if (kind == Transparent)
+            {
+                continue;
+            }
+
+            columnOpaque[x] += sign;
+            if (kind == Dark)
+            {
+                columnDark[x] += sign;
+            }
+        }
     }
 }
