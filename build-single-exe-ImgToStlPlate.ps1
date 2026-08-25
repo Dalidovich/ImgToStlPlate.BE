@@ -1,10 +1,10 @@
 [CmdletBinding()]
 param(
     [string]$BackendDir = $PSScriptRoot,
-    [string]$FrontendDir = (Join-Path (Split-Path -Parent $PSScriptRoot) 'ImgToStlPlate.FE'),
+    [string]$FrontendDir = "",
     [int]$Port = 5108,
     [string]$ListenAddress = '0.0.0.0',
-    [string]$OutputDir = (Join-Path (Split-Path -Parent $PSScriptRoot) 'publish'),
+    [string]$OutputDir = "",
     [switch]$SkipFrontendBuild,
     [switch]$Launch
 )
