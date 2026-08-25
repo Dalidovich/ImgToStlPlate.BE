@@ -1,4 +1,6 @@
+using ImgToStlPlate.API.Middleware;
 using ImgToStlPlate.API.Services;
+using Microsoft.AspNetCore.Http.Features;
 
 namespace ImgToStlPlate.API;
 
@@ -17,12 +19,19 @@ public class Program
 
         builder.Services.AddLogging();
 
+        builder.Services.Configure<FormOptions>(options =>
+        {
+            options.MultipartBodyLengthLimit = AppConstants.MaxRequestBodyBytes;
+        });
+
         builder.WebHost.ConfigureKestrel(options =>
         {
-            options.Limits.MaxRequestBodySize = 52428800;
+            options.Limits.MaxRequestBodySize = AppConstants.MaxRequestBodyBytes;
         });
 
         var app = builder.Build();
+
+        app.UseMiddleware<RequestSizeLimitMiddleware>();
 
         if (app.Environment.IsDevelopment())
         {

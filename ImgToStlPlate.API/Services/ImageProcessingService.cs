@@ -1,6 +1,7 @@
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
 using SixLabors.ImageSharp.Processing;
+using ImgToStlPlate.API.Imaging;
 using ImgToStlPlate.API.Models;
 
 namespace ImgToStlPlate.API.Services;
@@ -15,8 +16,7 @@ public class ImageProcessingService : IImageProcessingService
         bool invert,
         double rotationDegrees)
     {
-        using var stream = image.OpenReadStream();
-        var img = await Image.LoadAsync<Rgba32>(stream);
+        var img = await SafeImageLoader.LoadAsync(image);
 
         if (Math.Abs(rotationDegrees) > 0.01)
         {
@@ -60,7 +60,7 @@ public class ImageProcessingService : IImageProcessingService
         }
 
         // Handle orientation: vertical means bottom of model = left side of image
-        if (string.Equals(orientation, "vertical", StringComparison.OrdinalIgnoreCase))
+        if (ModelOrientation.IsVertical(orientation))
         {
             img.Mutate(ctx => ctx.Rotate(RotateMode.Rotate90));
         }
