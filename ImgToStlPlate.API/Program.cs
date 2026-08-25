@@ -15,16 +15,6 @@ public class Program
         builder.Services.AddEndpointsApiExplorer();
         builder.Services.AddSwaggerGen();
 
-        builder.Services.AddCors(options =>
-        {
-            options.AddPolicy("AllowAngular", policy =>
-            {
-                policy.WithOrigins("http://localhost:4200")
-                      .AllowAnyHeader()
-                      .AllowAnyMethod();
-            });
-        });
-
         builder.Services.AddLogging();
 
         builder.WebHost.ConfigureKestrel(options =>
@@ -40,7 +30,6 @@ public class Program
             app.UseSwaggerUI();
         }
 
-        app.UseCors("AllowAngular");
         app.UseDefaultFiles();
         app.UseStaticFiles();
         app.MapControllers();
