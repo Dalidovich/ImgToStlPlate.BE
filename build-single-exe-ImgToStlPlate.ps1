@@ -1,10 +1,10 @@
 [CmdletBinding()]
 param(
-    [string]$BackendDir = "",
-    [string]$FrontendDir = "",
+    [string]$BackendDir = $PSScriptRoot,
+    [string]$FrontendDir = (Join-Path (Split-Path -Parent $PSScriptRoot) 'ImgToStlPlate.FE'),
     [int]$Port = 5108,
     [string]$ListenAddress = '0.0.0.0',
-    [string]$OutputDir = "",
+    [string]$OutputDir = (Join-Path (Split-Path -Parent $PSScriptRoot) 'publish'),
     [switch]$SkipFrontendBuild,
     [switch]$Launch
 )
@@ -14,6 +14,46 @@ $ErrorActionPreference = 'Stop'
 function Write-Step([string]$msg) {
     Write-Host "`n=== $msg ===" -ForegroundColor Cyan
 }
+
+function Resolve-FullPath([string]$Path) {
+    return $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Path)
+}
+
+function Assert-RemovablePath([string]$Path, [string]$Purpose) {
+    if ([string]::IsNullOrWhiteSpace($Path)) {
+        throw "$Purpose must not be empty."
+    }
+
+    $full = (Resolve-FullPath $Path).TrimEnd([IO.Path]::DirectorySeparatorChar, [IO.Path]::AltDirectorySeparatorChar)
+    if ([string]::IsNullOrWhiteSpace($full)) {
+        throw "$Purpose resolves to an empty path: '$Path'."
+    }
+
+    $root = [IO.Path]::GetPathRoot($full).TrimEnd([IO.Path]::DirectorySeparatorChar, [IO.Path]::AltDirectorySeparatorChar)
+    if ($full -eq $root) {
+        throw "$Purpose must not be a drive or share root: '$full'."
+    }
+
+    $guard = $PSScriptRoot.TrimEnd([IO.Path]::DirectorySeparatorChar, [IO.Path]::AltDirectorySeparatorChar)
+    $fullWithSeparator = $full + [IO.Path]::DirectorySeparatorChar
+    if ($guard -eq $full -or $guard.StartsWith($fullWithSeparator, [StringComparison]::OrdinalIgnoreCase)) {
+        throw "$Purpose must not contain the repository: '$full'."
+    }
+
+    return $full
+}
+
+function Remove-DirectorySafely([string]$Path, [string]$Purpose) {
+    $full = Assert-RemovablePath $Path $Purpose
+    if (Test-Path -LiteralPath $full) {
+        Remove-Item -LiteralPath $full -Recurse -Force
+    }
+    return $full
+}
+
+$BackendDir = Resolve-FullPath $BackendDir
+$FrontendDir = Resolve-FullPath $FrontendDir
+$OutputDir = Assert-RemovablePath $OutputDir 'OutputDir'
 
 $ApiProject = Join-Path $BackendDir 'ImgToStlPlate.API'
 $PublishDir = Join-Path $ApiProject 'bin\Release\net9.0\win-x64\publish'
@@ -45,14 +85,23 @@ if (-not $SkipFrontendBuild) {
 
 $browserOut = Join-Path $FrontendDir 'dist\ImgToStlPlate\browser'
 if (-not (Test-Path $browserOut)) {
-    throw "Frontend build output not found: $browserOut (run with -SkipFrontendBuild only if dist already exists)"
+    throw "Frontend build output not found: $browserOut (with -SkipFrontendBuild, run 'npm run build' in $FrontendDir first)"
 }
 
 Write-Step "Copying frontend output to wwwroot"
-$wwwroot = Join-Path $ApiProject 'wwwroot'
-if (Test-Path $wwwroot) { Remove-Item $wwwroot -Recurse -Force }
+$wwwroot = Remove-DirectorySafely (Join-Path $ApiProject 'wwwroot') 'wwwroot'
 New-Item -ItemType Directory -Path $wwwroot | Out-Null
 Copy-Item (Join-Path $browserOut '*') $wwwroot -Recurse -Force
+
+Write-Step "Checking bundle for hardcoded API origins"
+$scannedExtensions = @('.js', '.mjs', '.css', '.html')
+$offenders = Get-ChildItem -LiteralPath $wwwroot -Recurse -File |
+    Where-Object { $scannedExtensions -contains $_.Extension.ToLowerInvariant() } |
+    Select-String -Pattern 'https?://(localhost|127\.0\.0\.1)[:/]' -List |
+    ForEach-Object { '{0}: {1}' -f $_.Path, $_.Line.Trim().Substring(0, [Math]::Min(120, $_.Line.Trim().Length)) }
+if ($offenders) {
+    throw "The packaged bundle contains an absolute localhost origin. The frontend must call the API through relative '/api' URLs.`n$($offenders -join "`n")"
+}
 
 $programCs = Join-Path $ApiProject 'Program.cs'
 if (-not (Select-String -Path $programCs -Pattern 'UseStaticFiles' -Quiet)) {
@@ -87,7 +136,7 @@ Get-Process -Name 'ImgToStlPlate.API' -ErrorAction SilentlyContinue |
     Where-Object { $_.Path -like "$OutputDir*" } |
     Stop-Process -Force -ErrorAction SilentlyContinue
 Start-Sleep -Milliseconds 500
-if (Test-Path $OutputDir) { Remove-Item $OutputDir -Recurse -Force }
+Remove-DirectorySafely $OutputDir 'OutputDir' | Out-Null
 New-Item -ItemType Directory -Path $OutputDir | Out-Null
 Copy-Item (Join-Path $PublishDir '*') $OutputDir -Recurse -Force
 

@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk.Web">
+﻿<Project Sdk="Microsoft.NET.Sdk.Web">
 
   <PropertyGroup>
     <TargetFramework>net9.0</TargetFramework>
@@ -10,6 +10,11 @@
   <ItemGroup>
     <Content Include="22-thickness-profile-marsh.ico" />
   </ItemGroup>
+
+  <Target Name="EnsureSpaBundlePresent" BeforeTargets="PrepareForPublish">
+    <Error Condition="!Exists('$(MSBuildProjectDirectory)/wwwroot/index.html')"
+           Text="wwwroot/index.html is missing. The SPA bundle is not tracked in git; run build-single-exe-ImgToStlPlate.ps1 to build and copy it before publishing." />
+  </Target>
 
   <ItemGroup>
     <PackageReference Include="SixLabors.ImageSharp" Version="3.1.6" />
