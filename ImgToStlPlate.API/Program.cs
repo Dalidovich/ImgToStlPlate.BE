@@ -1,3 +1,4 @@
+using ImgToStlPlate.API.Binding;
 using ImgToStlPlate.API.Middleware;
 using ImgToStlPlate.API.Services;
 using Microsoft.AspNetCore.Http.Features;
@@ -13,7 +14,10 @@ public class Program
         builder.Services.AddSingleton<IImageProcessingService, ImageProcessingService>();
         builder.Services.AddSingleton<IStlGeneratorService, StlGeneratorService>();
 
-        builder.Services.AddControllers();
+        builder.Services.AddControllers(options =>
+        {
+            options.ModelBinderProviders.Insert(0, new FlexibleDoubleModelBinderProvider());
+        });
         builder.Services.AddEndpointsApiExplorer();
         builder.Services.AddSwaggerGen();
 
