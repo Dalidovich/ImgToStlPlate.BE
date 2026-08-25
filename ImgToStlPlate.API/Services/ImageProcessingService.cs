@@ -182,6 +182,37 @@ public class ImageProcessingService : IImageProcessingService
         return Task.CompletedTask;
     }
 
+    public int[,] BuildHeightMatrix(Image<Rgba32> bwImage, int targetWidth, int targetHeight)
+    {
+        bwImage.Mutate(ctx => ctx
+            .Resize(targetWidth, targetHeight, KnownResamplers.Bicubic)
+            .Flip(FlipMode.Vertical));
+
+        int w = bwImage.Width;
+        int h = bwImage.Height;
+        var matrix = new int[h, w];
+
+        bwImage.ProcessPixelRows(accessor =>
+        {
+            for (int y = 0; y < h; y++)
+            {
+                var row = accessor.GetRowSpan(y);
+                for (int x = 0; x < w; x++)
+                {
+                    ref Rgba32 px = ref row[x];
+                    if (px.A < 128)
+                        matrix[y, x] = -1;
+                    else if (px.R < 128)
+                        matrix[y, x] = 1;
+                    else
+                        matrix[y, x] = 0;
+                }
+            }
+        });
+
+        return matrix;
+    }
+
     private static byte[] ClassifyPixels(Image<Rgba32> image)
     {
         int w = image.Width;

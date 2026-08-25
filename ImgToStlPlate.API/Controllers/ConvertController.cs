@@ -5,7 +5,6 @@ using ImgToStlPlate.API.Models;
 using ImgToStlPlate.API.Services;
 using Microsoft.AspNetCore.Mvc;
 using SixLabors.ImageSharp;
-using SixLabors.ImageSharp.Processing;
 using SixLabors.ImageSharp.Formats.Png;
 
 namespace ImgToStlPlate.API.Controllers;
@@ -190,29 +189,7 @@ public class ConvertController : ControllerBase
 
             using var img = await SafeImageLoader.LoadAsync(bwImage);
 
-            img.Mutate(ctx => ctx
-                .Resize(targetWidth, targetHeight, KnownResamplers.Bicubic)
-                .Flip(FlipMode.Vertical));
-
-            var pixels = img.Frames.RootFrame;
-
-            int w = img.Width;
-            int h = img.Height;
-            var matrix = new int[h, w];
-
-            for (int y = 0; y < h; y++)
-            {
-                for (int x = 0; x < w; x++)
-                {
-                    var px = pixels[x, y];
-                    if (px.A < 128)
-                        matrix[y, x] = -1;
-                    else if (px.R < 128)
-                        matrix[y, x] = 1;
-                    else
-                        matrix[y, x] = 0;
-                }
-            }
+            var matrix = _imageService.BuildHeightMatrix(img, targetWidth, targetHeight);
 
             var stlBytes = _stlService.GenerateStl(matrix, thickness, AppConstants.MmPerPixel, AppConstants.WhitePixelThicknessRatio);
 

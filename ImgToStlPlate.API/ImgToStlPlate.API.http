@@ -1,6 +1,77 @@
 @ImgToStlPlate.API_HostAddress = http://localhost:5257
 
-GET {{ImgToStlPlate.API_HostAddress}}/weatherforecast/
-Accept: application/json
+POST {{ImgToStlPlate.API_HostAddress}}/api/convert/to-bw
+Content-Type: multipart/form-data; boundary=Boundary
+
+--Boundary
+Content-Disposition: form-data; name="image"; filename="source.png"
+Content-Type: image/png
+
+< ./source.png
+--Boundary
+Content-Disposition: form-data; name="selection"
+
+{"x":0,"y":0,"width":800,"height":600}
+--Boundary
+Content-Disposition: form-data; name="orientation"
+
+horizontal
+--Boundary
+Content-Disposition: form-data; name="fillSpace"
+
+false
+--Boundary
+Content-Disposition: form-data; name="invert"
+
+false
+--Boundary
+Content-Disposition: form-data; name="rotationDegrees"
+
+0
+--Boundary--
+
+###
+
+POST {{ImgToStlPlate.API_HostAddress}}/api/convert/denoise
+Content-Type: multipart/form-data; boundary=Boundary
+
+--Boundary
+Content-Disposition: form-data; name="bwImage"; filename="bw.png"
+Content-Type: image/png
+
+< ./bw.png
+--Boundary
+Content-Disposition: form-data; name="intensity"
+
+50
+--Boundary--
+
+###
+
+POST {{ImgToStlPlate.API_HostAddress}}/api/convert/to-stl
+Content-Type: multipart/form-data; boundary=Boundary
+
+--Boundary
+Content-Disposition: form-data; name="bwImage"; filename="bw.png"
+Content-Type: image/png
+
+< ./bw.png
+--Boundary
+Content-Disposition: form-data; name="thickness"
+
+2
+--Boundary
+Content-Disposition: form-data; name="modelWidth"
+
+100
+--Boundary
+Content-Disposition: form-data; name="modelHeight"
+
+75
+--Boundary
+Content-Disposition: form-data; name="orientation"
+
+horizontal
+--Boundary--
 
 ###
