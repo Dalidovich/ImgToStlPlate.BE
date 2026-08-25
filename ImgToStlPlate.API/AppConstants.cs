@@ -1,7 +1,7 @@
 public static class AppConstants
 {
     public const double MmPerPixel = 0.4;
-    public const double ZeroToHalfRatio = 0.5;
+    public const double WhitePixelThicknessRatio = 0.5;
 
     public const double MinModelDimensionMm = 1.0;
     public const double MaxModelDimensionMm = 500.0;

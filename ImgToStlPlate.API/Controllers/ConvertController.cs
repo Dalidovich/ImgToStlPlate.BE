@@ -213,7 +213,7 @@ public class ConvertController : ControllerBase
                 }
             }
 
-            var stlBytes = _stlService.GenerateStl(matrix, thickness, AppConstants.MmPerPixel, AppConstants.ZeroToHalfRatio);
+            var stlBytes = _stlService.GenerateStl(matrix, thickness, AppConstants.MmPerPixel, AppConstants.WhitePixelThicknessRatio);
 
             return File(stlBytes, "model/stl", "model.stl");
         }
