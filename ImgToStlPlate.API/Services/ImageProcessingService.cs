@@ -86,12 +86,12 @@ public class ImageProcessingService : IImageProcessingService
         return img;
     }
 
-    public Task<Image<Rgba32>> Denoise(Image<Rgba32> bwImage, int intensity)
+    public Task Denoise(Image<Rgba32> bwImage, int intensity)
     {
         int radius = (int)Math.Round(intensity / 100.0 * 3.0);
         if (radius == 0)
         {
-            return Task.FromResult(bwImage);
+            return Task.CompletedTask;
         }
 
         int w = bwImage.Width;
@@ -145,6 +145,6 @@ public class ImageProcessingService : IImageProcessingService
             }
         }
 
-        return Task.FromResult(bwImage);
+        return Task.CompletedTask;
     }
 }

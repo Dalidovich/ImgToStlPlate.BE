@@ -80,14 +80,12 @@ public class ConvertController : ControllerBase
             _logger.LogInformation("Converting image to B&W: orientation={O}, fill={F}, invert={I}, rotation={R}",
                 orientation, fillSpace, invert, rotationDegrees);
 
-            var result = await _imageService.CropAndConvertToBw(
+            using var result = await _imageService.CropAndConvertToBw(
                 image, cropSelection,
                 orientation, fillSpace, invert, rotationDegrees);
 
-            var ms = new MemoryStream();
+            using var ms = new MemoryStream();
             await result.SaveAsync(ms, new PngEncoder());
-            ms.Position = 0;
-            result.Dispose();
 
             return File(ms.ToArray(), "image/png");
         }
@@ -115,14 +113,12 @@ public class ConvertController : ControllerBase
 
             _logger.LogInformation("Denoising image with intensity={I}", intensity);
 
-            var img = await SafeImageLoader.LoadAsync(bwImage);
+            using var img = await SafeImageLoader.LoadAsync(bwImage);
 
-            var result = await _imageService.Denoise(img, intensity);
+            await _imageService.Denoise(img, intensity);
 
-            var ms = new MemoryStream();
-            await result.SaveAsync(ms, new PngEncoder());
-            ms.Position = 0;
-            result.Dispose();
+            using var ms = new MemoryStream();
+            await img.SaveAsync(ms, new PngEncoder());
 
             return File(ms.ToArray(), "image/png");
         }
@@ -188,7 +184,7 @@ public class ConvertController : ControllerBase
 
             _logger.LogInformation("Generating STL: {W}x{H}mm, thickness={T}mm", modelWidth, modelHeight, thickness);
 
-            var img = await SafeImageLoader.LoadAsync(bwImage);
+            using var img = await SafeImageLoader.LoadAsync(bwImage);
 
             img.Mutate(ctx => ctx.Resize(targetWidth, targetHeight, KnownResamplers.Bicubic));
 
